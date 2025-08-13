@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Unblock Me — Web</title>
+<style>
+  :root{
+    --cell: 80px;         /* базовый размер клетки */
+    --gap: 6px;           /* просвет между блоками (визуальный) */
+    --board: #deb887;     /* дерево */
+    --rim: #5c3b1e;       /* окантовка */
+    --bg1: #f7efe1;       /* фон градиента 1 */
+    --bg2: #d4b483;       /* фон градиента 2 */
+    --brand: #6a3fc1;     /* фиолетовый акцент */
+    --text: #2b2117;
+    --card: #ffffff;
+    --muted: rgba(43,33,23,.75);
+    --grid: rgba(0,0,0,.085);
+    --accent-ghost: #efe9ff;
+  }
+  body.theme-dark{
+    --board: #4a3525;
+    --rim: #2a1b12;
+    --bg1: #17151a;
+    --bg2: #0e0d10;
+    --brand: #9a7cff;
+    --text: #e8e4f0;
+    --card: #1f1b24;
+    --muted: rgba(232,228,240,.75);
+    --grid: rgba(255,255,255,.09);
+    --accent-ghost: #2c2735;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    font-family: system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+    background: radial-gradient(1000px 700px at 30% -10%, var(--bg1), transparent),
+                radial-gradient(800px 600px at 120% 120%, var(--bg2), transparent),
+                linear-gradient(135deg, var(--bg1), var(--bg2));
+    color:var(--text);display:flex;align-items:center;justify-content:center;padding:18px
+  }
+  .screen{display:none;width:100%;max-width:1100px}
+  .screen.active{display:block}
+  .card{background:var(--card);border-radius:20px;box-shadow:0 18px 60px rgba(0,0,0,.15);padding:24px}
+  h1{margin:0 0 12px;font-weight:900}
+  .muted{opacity:.75;color:var(--muted)}
+  .row{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+  .spacer{height:12px}
+
+  /* Кнопки */
+  .btn{appearance:none;border:0;border-radius:12px;padding:12px 18px;font-weight:800;cursor:pointer;
+       background:linear-gradient(180deg,#8b5a2b,#70451f);color:#fff;box-shadow:0 4px 0 rgba(0,0,0,.2);transition:transform .06s ease, box-shadow .06s ease}
+  .btn:hover{transform:translateY(-1px);box-shadow:0 6px 0 rgba(0,0,0,.2)}
+  .btn:active{transform:translateY(1px)}
+  .btn.secondary{background:linear-gradient(180deg,#e9e4f8,#d7cef3);color:var(--text)}
+  .btn.ghost{background:transparent;border:2px solid rgba(0,0,0,.1);color:var(--text)}
+  .btn.toggle{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(180deg,#3b3f8c,#2b2f6c)}
+  .btn.small{padding:8px 12px;border-radius:10px;font-size:14px}
+
+  /* Доска */
+  #stage{display:flex;gap:24px;align-items:flex-start;justify-content:center;flex-wrap:wrap}
+  #boardWrapper{position:relative}
+  #board{
+    position:relative;
+    width: calc(var(--cell)*6 + 16px);
+    height: calc(var(--cell)*6 + 16px);
+    border:8px solid var(--rim);border-radius:14px;overflow:visible;
+    background: var(--board);
+    box-shadow:0 16px 40px rgba(0,0,0,.25), inset 0 0 0 1px rgba(0,0,0,.08)
+  }
+  /* еле заметная сетка */
+  #board::after{
+    content:"";position:absolute;left:8px;top:8px;width:calc(var(--cell)*6);height:calc(var(--cell)*6);
+    background:
+      repeating-linear-gradient(to right, var(--grid), var(--grid) 1px, transparent 1px, transparent var(--cell)),
+      repeating-linear-gradient(to bottom, var(--grid), var(--grid) 1px, transparent 1px, transparent var(--cell));
+    pointer-events:none;border-radius:8px;opacity:.28
+  }
+  /* Проём выхода справа, по той же строке, что и красный блок */
+  #exit{position:absolute;right:-8px;width:16px;height:var(--cell);top:calc(8px + var(--exit-row, 2)*var(--cell));background:var(--bg1);border-radius:3px;z-index:2}
+
+  .block{position:absolute;user-select:none;touch-action:none;cursor:grab;border-radius:10px;
+         box-shadow:inset -3px -5px 10px rgba(0,0,0,.25), 0 4px 12px rgba(0,0,0,.18);
+         background:#c89f72; transition: transform .25s ease, left .1s, top .1s}
+  .block.red{background:#e03b3b}
+  .block.active{outline:3px solid rgba(255,255,255,.6);box-shadow:0 0 0 4px rgba(106,63,193,.35), inset -3px -5px 10px rgba(0,0,0,.25)}
+
+  /* HUD */
+  .hud{min-width:290px}
+  .stat{font-weight:800}
+  .pill{display:inline-block;background:var(--accent-ghost);color:#3d287f;padding:6px 10px;border-radius:999px;font-weight:800}
+  .sep{height:1px;background:#eee2cf;margin:12px 0}
+  .stars{font-size:22px;letter-spacing:2px}
+
+  /* Level Select */
+  #levelGrid{display:grid;grid-template-columns:repeat(5, minmax(90px, 1fr));gap:12px}
+  .lvlBtn{position:relative;display:flex;align-items:center;justify-content:center;height:70px;border-radius:12px;
+          background:linear-gradient(180deg,#ffffff,#f3f0e7);border:2px solid rgba(0,0,0,.06);font-weight:900;cursor:pointer}
+  body.theme-dark .lvlBtn{background:linear-gradient(180deg,#2b2733,#241f2a);border-color:rgba(255,255,255,.06)}
+  .lvlBtn.locked{opacity:.55;cursor:not-allowed}
+  .lvlBtn .lock{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:22px}
+
+  /* Overlay победы */
+  #overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:18px;z-index:99}
+  #overlay.show{display:flex}
+  #overlay .dialog{background:var(--card);color:var(--text);padding:22px;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.4);text-align:center;min-width:320px}
+
+  /* Badges */
+  .badge{display:inline-block;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:800}
+  .badge.good{background:#e9f8ef;color:#0c6b2e}
+  .badge.info{background:#eaf1ff;color:#163a9a}
+  .badge.warn{background:#fff3d6;color:#7a5606}
+
+  /* Hint UI */
+  .hintPulse{position:absolute;border:3px dashed rgba(255,255,255,.8);border-radius:10px;pointer-events:none;animation:pulse 1s ease-in-out infinite}
+  @keyframes pulse{0%{opacity:.2}50%{opacity:.8}100%{opacity:.2}}
+
+  /* Toast маленьких ачивок */
+  #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--card);color:var(--text);border-radius:10px;padding:10px 14px;box-shadow:0 10px 30px rgba(0,0,0,.3);display:none;z-index:120;font-weight:800}
+</style>
+</head>
+<body>
+  <!-- MENU -->
+  <section id="menu" class="screen active">
+    <div class="card" style="text-align:center">
+      <h1>Unblock Me — браузерная версия</h1>
+      <p class="muted">15 уровней, плавное перетаскивание, прогресс сохраняется локально.</p>
+      <div class="spacer"></div>
+      <div class="row" style="justify-content:center">
+        <button class="btn" id="playBtn">Играть</button>
+        <button class="btn secondary" id="chooseBtn">Выбор уровня</button>
+        <button class="btn ghost" id="achBtn">Ачивки</button>
+        <button class="btn toggle" id="themeBtn">Тема: <span id="themeName">Светлая</span></button>
+      </div>
+      <div class="spacer"></div>
+      <div class="muted">Нажми «Меню», чтобы вернуться сюда из игры.</div>
+    </div>
+  </section>
+
+  <!-- LEVEL SELECT -->
+  <section id="levelSelect" class="screen">
+    <div class="card">
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <h2 style="margin:0">Выбор уровня</h2>
+        <div class="row">
+          <button class="btn ghost" id="backFromSelect">Меню</button>
+        </div>
+      </div>
+      <div class="spacer"></div>
+      <div id="levelGrid"></div>
+      <div class="spacer"></div>
+      <span class="muted">🔒 — заблокирован, откроется после прохождения предыдущих. ⭐ — твой лучший результат.</span>
+    </div>
+  </section>
+
+  <!-- GAME -->
+  <section id="game" class="screen">
+    <div class="card">
+      <div id="stage">
+        <div id="boardWrapper">
+          <div id="board"><div id="exit"></div></div>
+        </div>
+        <div class="hud">
+          <div class="pill">Уровень: <span id="levelLabel">1</span> / <span id="levelTotal">15</span></div>
+          <div class="spacer"></div>
+          <div class="stat">Ходы: <span id="moves">0</span></div>
+          <div class="stars" id="stars">☆☆☆</div>
+          <div class="sep"></div>
+          <div class="row">
+            <button class="btn secondary small" id="hintBtn">Подсказка (x<span id="hintLeft">3</span>)</button>
+            <button class="btn secondary small" id="undoBtn">Отменить</button>
+          </div>
+          <div class="sep"></div>
+          <div class="row">
+            <button class="btn secondary" id="resetBtn">Сброс уровня</button>
+            <button class="btn secondary" id="toSelectBtn">Выбор уровня</button>
+            <button class="btn ghost" id="toMenuBtn">Меню</button>
+            <button class="btn toggle" id="themeBtnInGame">Тема: <span id="themeName2">Светлая</span></button>
+          </div>
+          <div class="spacer"></div>
+          <div class="badge info">Совет</div>
+          <div class="muted">Горизонтальные блоки двигаются по X, вертикальные — по Y. Останавливаются у препятствий.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- WIN OVERLAY -->
+  <div id="overlay">
+    <div class="dialog">
+      <h2 style="margin:0 0 6px">Победа! 🎉</h2>
+      <div id="winStars" style="font-size:28px">☆☆☆</div>
+      <p class="muted" id="winText">Красный блок достиг выхода.</p>
+      <div class="spacer"></div>
+      <div class="row" style="justify-content:center">
+        <button class="btn" id="nextBtn">Следующий уровень</button>
+        <button class="btn secondary" id="closeWinBtn">В выбор уровней</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ACHIEVEMENTS OVERLAY -->
+  <div id="achOverlay" style="position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:110">
+    <div class="dialog" style="background:var(--card);color:var(--text);padding:22px;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.4);min-width:360px">
+      <h2 style="margin:0 0 10px">Ачивки</h2>
+      <div id="achList" class="muted"></div>
+      <div class="spacer"></div>
+      <div class="row" style="justify-content:center"><button class="btn ghost" id="closeAch">Закрыть</button></div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+<script>
+(()=>{
+  // ======= СОСТОЯНИЕ/DOM =======
+  const SIZE = 6;
+  const CELL = 80; // px
+  const HINTS_PER_LEVEL = 3;
+  const UNDO_DEPTH = 2;
+  const board = document.getElementById('board');
+  const exitHole = document.getElementById('exit');
+  const movesEl = document.getElementById('moves');
+  const levelLabel = document.getElementById('levelLabel');
+  const levelTotalEl = document.getElementById('levelTotal');
+  const overlay = document.getElementById('overlay');
+  const nextBtn = document.getElementById('nextBtn');
+  const closeWinBtn = document.getElementById('closeWinBtn');
+  const playBtn = document.getElementById('playBtn');
+  const chooseBtn = document.getElementById('chooseBtn');
+  const backFromSelect = document.getElementById('backFromSelect');
+  const resetBtn = document.getElementById('resetBtn');
+  const toSelectBtn = document.getElementById('toSelectBtn');
+  const toMenuBtn = document.getElementById('toMenuBtn');
+  const levelGrid = document.getElementById('levelGrid');
+  const hintBtn = document.getElementById('hintBtn');
+  const hintLeftEl = document.getElementById('hintLeft');
+  const undoBtn = document.getElementById('undoBtn');
+  const starsEl = document.getElementById('stars');
+  const winStarsEl = document.getElementById('winStars');
+  const toast = document.getElementById('toast');
+  const achBtn = document.getElementById('achBtn');
+  const achOverlay = document.getElementById('achOverlay');
+  const achList = document.getElementById('achList');
+  const closeAch = document.getElementById('closeAch');
+  const themeBtn = document.getElementById('themeBtn');
+  const themeBtnInGame = document.getElementById('themeBtnInGame');
+  const themeName = document.getElementById('themeName');
+  const themeName2 = document.getElementById('themeName2');
+
+  let currentLevel = 0;
+  let moves = 0;
+  let blocks = [];
+  let nodes = new Map(); // id -> DOM
+  let dragging = null;
+  let dragStart = null; // {x,y} pointer
+  let startPos = null;  // {x,y} block pos
+  let exitRow = 2;
+  let undoStack = [];
+  let hintsLeft = HINTS_PER_LEVEL;
+  let hintArtifact = null; // DOM-подсветка
+  let usedHintThisLevel = false;
+
+  // ======= УРОВНИ (15 штук, усложняются) =======
+  // Формат блока: {x,y,w,h, red?:true}
+  const LEVELS = [
+    // 1. Разминка
+    [
+      {x:1,y:2,w:2,h:1,red:true},
+      {x:3,y:0,w:1,h:3}, {x:5,y:0,w:1,h:2}, {x:0,y:0,w:1,h:3},
+      {x:2,y:3,w:1,h:3}, {x:0,y:5,w:2,h:1}, {x:1,y:0,w:2,h:1}
+    ],
+    // 2
+    [
+      {x:1,y:2,w:2,h:1,red:true},
+      {x:3,y:0,w:1,h:3}, {x:2,y:3,w:3,h:1}, {x:1,y:3,w:1,h:3},
+      {x:5,y:0,w:1,h:2}, {x:0,y:0,w:2,h:1}, {x:0,y:4,w:1,h:2}
+    ],
+    // 3
+    [
+      {x:1,y:2,w:2,h:1,red:true},
+      {x:3,y:0,w:1,h:3}, {x:4,y:2,w:1,h:3}, {x:2,y:1,w:3,h:1},
+      {x:0,y:4,w:3,h:1}, {x:0,y:0,w:1,h:3}, {x:5,y:0,w:1,h:2}, {x:2,y:4,w:1,h:2}
+    ],
+    // 4 — больше вертикальных барьеров справа
+    [
+      {x:1,y:2,w:2,h:1,red:true},
+      {x:4,y:0,w:1,h:3},{x:3,y:0,w:1,h:2},{x:5,y:2,w:1,h:3},
+      {x:0,y:1,w:2,h:1},{x:0,y:3,w:3,h:1},{x:2,y:4,w:1,h:2}
+    ],
+    // 5 — длинные горизонтальные помехи сверху и снизу
+    [
+      {x:1,y:2,w:2,h:1,red:true},
+      {x:0,y:0,w:3,h:1},{x:3,y:0,w:3,h:1},{x:0,y:5,w:4,h:1},
+      {x:4,y:1,w:1,h:3},{x:5,y:3,w:1,h:2}
+    ],
+    // 6 — узкий коридор
+    [
+      {x:1,y:2,w:2,h:1,red:true},
+      {x:3,y:0,w:1,h:3},{x:4,y:0,w:1,h:2},{x:5,y:1,w:1,h:3},
+      {x:0,y:4,w:2,h:1},{x:0,y:0,w:1,h:3},{x:2,y:3,w:1,h:3}
+    ],
+    // 7 — несколько шагов назад/вперёд
+    [
+      {x:1,y:2,w:2,h:1,red:true},
+      {x:2,y:0,w:1,h:3},{x:4,y:0,w:1,h:4},{x:5,y:0,w:1,h:2},
+      {x:0,y:0,w:2,h:1},{x:0,y:3,w:3,h:1},{x:1,y:4,w:1,h:2}
+    ],
+    // 8 — плотная правая сторона
+    [
+      {x:1,y:2,w:2,h:1,red:true},
+      {x:3,y:0,w:1,h:4},{x:4,y:1,w:1,h:3},{x:5,y:0,w:1,h:2},
+      {x:0,y:0,w:2,h:1},{x:0,y:4,w:3,h:1},{x:2,y:5,w:2,h:1}
+    ],
+    // 9 — изломанный путь
+    [
+      {x:1,y:2,w:2,h:1,red:true},
+      {x:3,y:0,w:1,h:2},{x:4,y:0,w:1,h:3},{x:5,y:1,w:1,h:3},
+      {x:2,y:4,w:3,h:1},{x:0,y:4,w:1,h:2},{x:0,y:0,w:2,h:1}
+    ],
+    // 10 — нужен «лифтовый» манёвр
+    [
+      {x:1,y:2,w:2,h:1,red:true},
+      {x:3,y:0,w:1,h:3},{x:4,y:1,w:1,h:3},{x:5,y:3,w:1,h:3},
+      {x:2,y:1,w:2,h:1},{x:0,y:4,w:3,h:1},{x:0,y:0,w:1,h:3}
+    ],
+    // 11 — сложнее, много вертикальных
+    [
+      {x:1,y:2,w:2,h:1,red:true},
+      {x:2,y:0,w:1,h:3},{x:3,y:0,w:1,h:4},{x:4,y:2,w:1,h:3},{x:5,y:0,w:1,h:2},
+      {x:0,y:0,w:2,h:1},{x:0,y:4,w:3,h:1}
+    ],
+    // 12 — длинные перемещения
+    [
+      {x:1,y:2,w:2,h:1,red:true},
+      {x:3,y:0,w:1,h:3},{x:4,y:3,w:1,h:3},{x:5,y:0,w:1,h:2},
+      {x:2,y:0,w:2,h:1},{x:0,y:4,w:4,h:1}
+    ],
+    // 13 — "бутылочное горлышко"
+    [
+      {x:1,y:2,w:2,h:1,red:true},
+      {x:3,y:0,w:1,h:4},{x:4,y:0,w:1,h:2},{x:5,y:2,w:1,h:3},
+      {x:0,y:1,w:2,h:1},{x:0,y:4,w:3,h:1}
+    ],
+    // 14 — почти всё справа, много перетаскиваний
+    [
+      {x:1,y:2,w:2,h:1,red:true},
+      {x:3,y:0,w:1,h:5},{x:4,y:1,w:1,h:3},{x:5,y:0,w:1,h:2},
+      {x:0,y:0,w:2,h:1},{x:0,y:4,w:2,h:1},{x:2,y:5,w:2,h:1}
+    ],
+    // 15 — финальный на сегодня
+    [
+      {x:0,y:2,w:2,h:1,red:true},
+      {x:2,y:1,w:1,h:4},{x:3,y:0,w:1,h:3},{x:4,y:2,w:1,h:3},{x:5,y:0,w:1,h:2},
+      {x:0,y:0,w:2,h:1},{x:0,y:4,w:3,h:1}
+    ]
+  ];
+  const SECRET_LEVELS = [
+    // S1 — откроется за победу без подсказок хотя бы на 1 уровне
+    [
+      {x:1,y:2,w:2,h:1,red:true},
+      {x:2,y:0,w:1,h:5},{x:4,y:0,w:1,h:3},{x:5,y:1,w:1,h:3},
+      {x:0,y:0,w:2,h:1},{x:0,y:4,w:3,h:1}
+    ],
+    // S2 — за 3⭐ на любом уровне
+    [
+      {x:0,y:2,w:2,h:1,red:true},
+      {x:2,y:0,w:1,h:4},{x:3,y:2,w:1,h:4},{x:5,y:0,w:1,h:3},
+      {x:0,y:0,w:3,h:1},{x:0,y:4,w:3,h:1}
+    ]
+  ];
+  levelTotalEl.textContent = LEVELS.length;
+
+  // "ПАР" ходов для звёзд (примерные цели)
+  const PAR = {1:8,2:10,3:12,4:12,5:13,6:14,7:15,8:16,9:16,10:18,11:18,12:18,13:19,14:20,15:21};
+
+  // ======= ЛОКАЛЬНЫЙ ПРОГРЕСС =======
+  const store = {
+    load(){
+      try { return JSON.parse(localStorage.getItem('unblock-progress')) || {unlocked:1,best:{},ach:{},secret:false,theme:'light'} } catch { return {unlocked:1,best:{},ach:{},secret:false,theme:'light'} }
+    },
+    save(data){ localStorage.setItem('unblock-progress', JSON.stringify(data)); }
+  };
+  let progress = store.load();
+
+  // ======= АЧИВКИ =======
+  const ACH = {
+    FIRST_WIN: 'Первая победа',
+    NO_HINT_WIN: 'Победа без подсказок',
+    THREE_STARS: 'Три звезды на уровне',
+    FIVE_LEVELS: 'Пройди 5 уровней',
+  };
+  function unlockAch(key){
+    if (progress.ach[key]) return;
+    progress.ach[key] = true; store.save(progress);
+    showToast('Ачивка: ' + key + ' ✨');
+    renderAch();
+    // Секретные уровни
+    if ((key===ACH.NO_HINT_WIN || key===ACH.THREE_STARS) && !progress.secret){
+      progress.secret = true; store.save(progress);
+      showToast('Открыты секретные уровни! ❓');
+      appendSecretLevels();
+      buildLevelGrid();
+    }
+  }
+  function renderAch(){
+    const items = Object.values(ACH).map(name => {
+      const done = Object.keys(progress.ach).find(k=>k===name);
+      const owned = Object.values(progress.ach).includes(true) && progress.ach[name];
+      const has = progress.ach[name] ? '✅' : '⬜️';
+      return `${has} ${name}`;
+    });
+    achList.innerHTML = items.map(i=>`<div style="margin:6px 0">${i}</div>`).join('');
+  }
+
+  function showToast(text){
+    toast.textContent = text; toast.style.display = 'block';
+    setTimeout(()=>{ toast.style.display='none'; }, 1600);
+  }
+
+  function appendSecretLevels(){
+    // Добавляем секретные уровни в конец, если ещё не добавлены
+    if (LEVELS.length===15){
+      SECRET_LEVELS.forEach(l=>LEVELS.push(l));
+      levelTotalEl.textContent = LEVELS.length;
+    }
+  }
+
+  // ======= УТИЛИТЫ =======
+  function show(id){ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); document.getElementById(id).classList.add('active'); }
+  function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+  function overlaps1D(aStart, aEnd, bStart, bEnd){ return aStart < bEnd && aEnd > bStart; }
+  function isHorizontal(b){ return b.w > 1; }
+  function px(n){ return `${n}px`; }
+  function deepClone(level){ return level.map(b=>({...b})); }
+  function shallowState(){ return blocks.map(b=>({x:+b.x,y:+b.y})); }
+  function restoreState(state){ state.forEach((p,i)=>{ blocks[i].x=p.x; blocks[i].y=p.y; placeNode(blocks[i]); }); layoutExit(); }
+
+  function layoutExit(){
+    const red = blocks.find(b=>b.red);
+    exitRow = Math.round(red.y);
+    document.documentElement.style.setProperty('--exit-row', exitRow);
+  }
+
+  // диапазон движения блока с учётом актуальных позиций других блоков
+  function allowedRange(block){
+    let minX = 0, maxX = SIZE - block.w; // по X
+    let minY = 0, maxY = SIZE - block.h; // по Y
+
+    if (isHorizontal(block)){
+      const y1 = block.y, y2 = block.y + block.h;
+      for (const o of blocks){ if (o === block) continue;
+        const oy1 = o.y, oy2 = o.y + o.h;
+        if (!overlaps1D(y1, y2, oy1, oy2)) continue; // не мешает по X
+        if (o.x + o.w <= block.x){ minX = Math.max(minX, o.x + o.w); }
+        if (o.x >= block.x + block.w){ maxX = Math.min(maxX, o.x - block.w); }
+      }
+      return {min: minX, max: maxX, axis:'x'};
+    } else {
+      const x1 = block.x, x2 = block.x + block.w;
+      for (const o of blocks){ if (o === block) continue;
+        const ox1 = o.x, ox2 = o.x + o.w;
+        if (!overlaps1D(x1, x2, ox1, ox2)) continue;
+        if (o.y + o.h <= block.y){ minY = Math.max(minY, o.y + o.h); }
+        if (o.y >= block.y + block.h){ maxY = Math.min(maxY, o.y - block.h); }
+      }
+      return {min: minY, max: maxY, axis:'y'};
+    }
+  }
+
+  function placeNode(b){
+    let el = nodes.get(b.id);
+    if (!el){
+      el = document.createElement('div');
+      el.className = 'block' + (b.red? ' red' : '');
+      el.dataset.id = b.id;
+      // стартовая анимация «падение»
+      el.style.transform = 'translateY(-20px)';
+      setTimeout(()=>{ el.style.transform = 'translateY(0)'; }, 20);
+      board.appendChild(el); nodes.set(b.id, el); enableDrag(el, b);
+    }
+    el.style.width = px(b.w*CELL - 4);
+    el.style.height = px(b.h*CELL - 4);
+    el.style.left = px(8 + b.x*CELL + 0);
+    el.style.top  = px(8 + b.y*CELL + 0);
+  }
+
+  function renderAll(){ for (const b of blocks) placeNode(b); }
+
+  function resetLevel(){
+    nodes.forEach(n=>n.remove()); nodes.clear();
+    blocks = deepClone(LEVELS[currentLevel]).map((b,idx)=>({...b,id:idx}));
+    moves = 0; movesEl.textContent = moves; levelLabel.textContent = currentLevel+1;
+    undoStack = []; hintsLeft = HINTS_PER_LEVEL; hintLeftEl.textContent = hintsLeft; usedHintThisLevel = false; clearHint();
+    layoutExit();
+    renderAll();
+    updateStars();
+  }
+
+  function loadLevel(idx){ currentLevel = idx; resetLevel(); }
+
+  // ======= ЗВЁЗДЫ =======
+  function starString(m){
+    const par = PAR[currentLevel+1] || 15;
+    if (m <= par) return '★★★';
+    if (m <= par+3) return '★★☆';
+    return '★☆☆';
+  }
+  function updateStars(){ starsEl.textContent = starString(moves); }
+
+  function winAnimationThen(cb){
+    const red = blocks.find(b=>b.red);
+    const el = nodes.get(red.id);
+    const dist = (SIZE - (red.x + red.w));
+    red.x = red.x + dist + 0.01; // чуть дальше края
+    el.style.transition = 'left .35s ease';
+    placeNode(red);
+    setTimeout(()=>{ el.style.transition = ''; cb && cb(); }, 360);
+  }
+
+  function win(){
+    const haveNext = currentLevel < LEVELS.length - 1;
+    const best = progress.best[currentLevel+1];
+    const better = !best || moves < best;
+
+    // звёзды и ачивки до показа оверлея
+    const stars = starString(moves);
+    winStarsEl.textContent = stars;
+    if (stars==='★★★') unlockAch(ACH.THREE_STARS);
+
+    // отмена подсказки — засчитаем ачивку «без подсказок»
+    if (!usedHintThisLevel) unlockAch(ACH.NO_HINT_WIN);
+
+    if (progress.unlocked < currentLevel + 2){ progress.unlocked = currentLevel + 2; }
+    if (better){ progress.best[currentLevel+1] = moves; }
+    store.save(progress); buildLevelGrid();
+
+    // первая победа / 5 уровней
+    unlockAch(ACH.FIRST_WIN);
+    if (progress.unlocked >= 6) unlockAch(ACH.FIVE_LEVELS);
+
+    document.getElementById('winText').innerHTML = better ? `Новый рекорд: <b>${moves}</b> ход(ов)!` : `Ходы: <b>${moves}</b>. Лучший: <b>${best}</b>.`;
+    nextBtn.textContent = haveNext ? 'Следующий уровень' : 'Сыграть сначала';
+
+    winAnimationThen(()=> overlay.classList.add('show'));
+  }
+
+  function checkWin(){
+    const red = blocks.find(b=>b.red);
+    if (Math.round(red.y) === exitRow && red.x + red.w >= SIZE) win();
+  }
+
+  // ======= DRAG / UNDO =======
+  function pushUndo(){
+    undoStack.push(shallowState());
+    if (undoStack.length > UNDO_DEPTH) undoStack.shift();
+  }
+  function undo(){
+    if (!undoStack.length) return;
+    const prev = undoStack.pop();
+    restoreState(prev);
+    if (moves>0){ moves--; movesEl.textContent = moves; updateStars(); }
+  }
+
+  function enableDrag(el, block){
+    el.addEventListener('pointerdown', (ev)=>{
+      ev.preventDefault();
+      el.setPointerCapture(ev.pointerId);
+      dragging = block; el.style.cursor = 'grabbing'; el.classList.add('active');
+      dragStart = {x:ev.clientX, y:ev.clientY};
+      startPos = {x:block.x, y:block.y};
+      const range = allowedRange(block);
+
+      const onMove = (e)=>{
+        const dx = (e.clientX - dragStart.x) / CELL;
+        const dy = (e.clientY - dragStart.y) / CELL;
+        if (range.axis === 'x'){
+          let nx = startPos.x + dx; nx = clamp(nx, range.min, range.max); block.x = nx; placeNode(block);
+        } else {
+          let ny = startPos.y + dy; ny = clamp(ny, range.min, range.max); block.y = ny; placeNode(block);
+        }
+      };
+
+      const onUp = ()=>{
+        el.releasePointerCapture(ev.pointerId);
+        el.style.cursor = 'grab'; el.classList.remove('active');
+        board.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        if (startPos.x !== block.x || startPos.y !== block.y){ pushUndo(); moves++; movesEl.textContent = moves; updateStars(); }
+        checkWin();
+      };
+
+      board.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    });
+  }
+
+  // ======= ПОДСКАЗКА (шаг за шагом, на основе ближайшей преграды) =======
+  function clearHint(){ if (hintArtifact){ hintArtifact.remove(); hintArtifact=null; } }
+  function showHint(){
+    if (hintsLeft<=0){ showToast('Подсказки закончились'); return; }
+    usedHintThisLevel = true;
+
+    clearHint();
+    const red = blocks.find(b=>b.red);
+    const y1 = red.y, y2 = red.y + red.h;
+    // ищем ближайший блок справа в той же полосе, который перекрывает красный по вертикали
+    let blocker = null, minDx = Infinity;
+    for (const o of blocks){ if (o===red) continue; const oy1=o.y, oy2=o.y+o.h; if (!overlaps1D(y1,y2,oy1,oy2)) continue; if (o.x >= red.x + red.w && o.x - (red.x+red.w) < minDx){ minDx = o.x - (red.x+red.w); blocker = o; } }
+
+    let rect;
+    if (!blocker){
+      // свободный путь — подсветим коридор до выхода
+      rect = {x:red.x+red.w, y:red.y, w:(SIZE - (red.x+red.w)), h:red.h};
+    } else {
+      // подсветим блокер и направление, куда его увести (вверх/вниз — где больше места)
+      const range = allowedRange(blocker);
+      const upSpace = blocker.y - range.min;
+      const downSpace = range.max - blocker.y;
+      const targetY = downSpace>upSpace ? range.max : range.min;
+      rect = {x:blocker.x, y:Math.min(blocker.y,targetY), w:blocker.w, h:blocker.h + Math.abs(targetY-blocker.y)};
+    }
+    const el = document.createElement('div'); el.className='hintPulse';
+    el.style.left = px(8 + rect.x*CELL); el.style.top = px(8 + rect.y*CELL);
+    el.style.width = px(rect.w*CELL - 4 + (rect.w?0:0)); el.style.height = px(rect.h*CELL - 4 + (rect.h?0:0));
+    board.appendChild(el); hintArtifact = el;
+
+    hintsLeft--; hintLeftEl.textContent = hintsLeft;
+  }
+
+  // ======= ВЫБОР УРОВНЯ =======
+  function buildLevelGrid(){
+    levelGrid.innerHTML = '';
+    for (let i=1;i<=LEVELS.length;i++){
+      const btn = document.createElement('button');
+      btn.className = 'lvlBtn';
+      btn.innerHTML = `${i}`;
+      const isLocked = i > progress.unlocked;
+      if (isLocked){ btn.classList.add('locked'); const lock = document.createElement('div'); lock.className='lock'; lock.textContent='🔒'; btn.appendChild(lock); }
+      const best = progress.best[i];
+      if (best){ const b = document.createElement('div'); b.className='badge good'; b.style.position='absolute'; b.style.bottom='6px'; b.style.left='6px'; b.textContent = best + ' х.'; btn.appendChild(b); }
+      btn.addEventListener('click', ()=>{ if (isLocked) return; show('game'); loadLevel(i-1); });
+      levelGrid.appendChild(btn);
+    }
+  }
+
+  // ======= ТЕМЫ =======
+  function applyTheme(){
+    const dark = progress.theme === 'dark';
+    document.body.classList.toggle('theme-dark', dark);
+    themeName.textContent = dark ? 'Тёмная' : 'Светлая';
+    themeName2.textContent = dark ? 'Тёмная' : 'Светлая';
+  }
+  function toggleTheme(){
+    progress.theme = (progress.theme==='dark') ? 'light' : 'dark';
+    store.save(progress); applyTheme();
+  }
+
+  // ======= НАВИГАЦИЯ =======
+  function initNav(){
+    playBtn.addEventListener('click', ()=>{ show('game'); loadLevel(0); });
+    chooseBtn.addEventListener('click', ()=>{ show('levelSelect'); buildLevelGrid(); });
+    backFromSelect.addEventListener('click', ()=>{ show('menu'); });
+    toSelectBtn.addEventListener('click', ()=>{ show('levelSelect'); buildLevelGrid(); });
+    toMenuBtn.addEventListener('click', ()=>{ show('menu'); });
+    resetBtn.addEventListener('click', ()=> resetLevel());
+    hintBtn.addEventListener('click', showHint);
+    undoBtn.addEventListener('click', undo);
+
+    nextBtn.addEventListener('click', ()=>{
+      overlay.classList.remove('show');
+      const haveNext = currentLevel < LEVELS.length-1;
+      if (haveNext){ loadLevel(currentLevel+1); show('game'); }
+      else { show('levelSelect'); buildLevelGrid(); }
+    });
+    closeWinBtn.addEventListener('click', ()=>{ overlay.classList.remove('show'); show('levelSelect'); buildLevelGrid(); });
+
+    achBtn.addEventListener('click', ()=>{ renderAch(); document.getElementById('achOverlay').style.display='flex'; });
+    closeAch.addEventListener('click', ()=>{ document.getElementById('achOverlay').style.display='none'; });
+
+    themeBtn.addEventListener('click', toggleTheme);
+    themeBtnInGame.addEventListener('click', toggleTheme);
+  }
+
+  // ======= ИНИТ =======
+  function init(){
+    document.documentElement.style.setProperty('--cell', CELL + 'px');
+    if (progress.secret) appendSecretLevels();
+    applyTheme();
+    levelTotalEl.textContent = LEVELS.length;
+    buildLevelGrid();
+    initNav();
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
