@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Unblock Me — Web</title>
+<title>Unblock Me</title>
 <style>
   :root{
     --cell: 80px;         /* базовый размер клетки */
@@ -274,7 +274,7 @@
     // 2
     [
       {x:1,y:2,w:2,h:1,red:true},
-      {x:3,y:0,w:1,h:3}, {x:2,y:3,w:3,h:1}, {x:1,y:3,w:1,h:3},
+      {x:3,y:0,w:1,h:3}, {x:2,y:3,w:2,h:1}, {x:1,y:3,w:1,h:3},
       {x:5,y:0,w:1,h:2}, {x:0,y:0,w:2,h:1}, {x:0,y:4,w:1,h:2}
     ],
     // 3
@@ -601,34 +601,114 @@
   function showHint(){
     if (hintsLeft<=0){ showToast('Подсказки закончились'); return; }
     usedHintThisLevel = true;
-
     clearHint();
-    const red = blocks.find(b=>b.red);
-    const y1 = red.y, y2 = red.y + red.h;
-    // ищем ближайший блок справа в той же полосе, который перекрывает красный по вертикали
-    let blocker = null, minDx = Infinity;
-    for (const o of blocks){ if (o===red) continue; const oy1=o.y, oy2=o.y+o.h; if (!overlaps1D(y1,y2,oy1,oy2)) continue; if (o.x >= red.x + red.w && o.x - (red.x+red.w) < minDx){ minDx = o.x - (red.x+red.w); blocker = o; } }
 
-    let rect;
-    if (!blocker){
-      // свободный путь — подсветим коридор до выхода
-      rect = {x:red.x+red.w, y:red.y, w:(SIZE - (red.x+red.w)), h:red.h};
-    } else {
-      // подсветим блокер и направление, куда его увести (вверх/вниз — где больше места)
-      const range = allowedRange(blocker);
-      const upSpace = blocker.y - range.min;
-      const downSpace = range.max - blocker.y;
-      const targetY = downSpace>upSpace ? range.max : range.min;
-      rect = {x:blocker.x, y:Math.min(blocker.y,targetY), w:blocker.w, h:blocker.h + Math.abs(targetY-blocker.y)};
+    // --- BFS-подсказка: ищем первый правильный ход к выходу ---
+    const N = blocks.length;
+    const redIdx = blocks.findIndex(b=>b.red);
+    const sizes = blocks.map(b=>({w:b.w, h:b.h, horiz: b.w>1}));
+    const start = blocks.map(b=>({x:Math.round(b.x), y:Math.round(b.y)}));
+
+    const encode = st => st.map(p=>p.x+','+p.y).join('|');
+    const overlaps1D_local = (a1,a2,b1,b2)=> a1 < b2 && a2 > b1;
+
+    function allowedRangeState(st, i){
+      const S = sizes[i];
+      const cur = st[i];
+      if (S.horiz){
+        let min = 0, max = SIZE - S.w;
+        const y1 = cur.y, y2 = cur.y + S.h;
+        for (let j=0;j<st.length;j++){ if (j===i) continue;
+          const Sj = sizes[j], p = st[j];
+          const oy1 = p.y, oy2 = p.y + Sj.h;
+          if (!overlaps1D_local(y1,y2,oy1,oy2)) continue;
+          if (p.x + Sj.w <= cur.x) min = Math.max(min, p.x + Sj.w);
+          if (p.x >= cur.x + S.w) max = Math.min(max, p.x - S.w);
+        }
+        return {axis:'x', min, max};
+      } else {
+        let min = 0, max = SIZE - S.h;
+        const x1 = cur.x, x2 = cur.x + S.w;
+        for (let j=0;j<st.length;j++){ if (j===i) continue;
+          const Sj = sizes[j], p = st[j];
+          const ox1 = p.x, ox2 = p.x + Sj.w;
+          if (!overlaps1D_local(x1,x2,ox1,ox2)) continue;
+          if (p.y + Sj.h <= cur.y) min = Math.max(min, p.y + Sj.h);
+          if (p.y >= cur.y + S.h) max = Math.min(max, p.y - S.h);
+        }
+        return {axis:'y', min, max};
+      }
     }
+
+    const goal = st => {
+      const r = st[redIdx], RS = sizes[redIdx];
+      return (r.x + RS.w) >= SIZE; // красный добрался до выхода
+    };
+
+    const q = [{st:start, move:null, prev:null}];
+    const seen = new Set([encode(start)]);
+    let found = null; let iters = 0; const LIMIT = 6000;
+
+    while(q.length && iters++ < LIMIT){
+      const node = q.shift();
+      if (goal(node.st)){ found = node; break; }
+      for (let i=0;i<N;i++){
+        const cur = node.st[i];
+        const range = allowedRangeState(node.st, i);
+        if (range.axis==='x'){
+          const opts=[]; if (range.min!==cur.x) opts.push(range.min); if (range.max!==cur.x && range.max!==range.min) opts.push(range.max);
+          for (const nx of opts){
+            const st2 = node.st.map(p=>({...p})); st2[i].x = nx;
+            const key = encode(st2); if (seen.has(key)) continue; seen.add(key);
+            q.push({st:st2, move:{i,axis:'x',from:cur.x,to:nx}, prev:node});
+          }
+        } else {
+          const opts=[]; if (range.min!==cur.y) opts.push(range.min); if (range.max!==cur.y && range.max!==range.min) opts.push(range.max);
+          for (const ny of opts){
+            const st2 = node.st.map(p=>({...p})); st2[i].y = ny;
+            const key = encode(st2); if (seen.has(key)) continue; seen.add(key);
+            q.push({st:st2, move:{i,axis:'y',from:cur.y,to:ny}, prev:node});
+          }
+        }
+      }
+    }
+
+    // Рисуем подсказку
+    let rect;
+    if (found){
+      // раскатать путь до первого хода
+      let first = found; while(first.prev && first.prev.prev) first = first.prev;
+      const mv = first.move; const b = blocks[mv.i];
+      const fromX = Math.round(b.x), fromY = Math.round(b.y);
+      if (mv.axis==='x'){
+        rect = {x: Math.min(fromX, mv.to), y: fromY, w: b.w + Math.abs(mv.to - fromX), h: b.h};
+      } else {
+        rect = {x: fromX, y: Math.min(fromY, mv.to), w: b.w, h: b.h + Math.abs(mv.to - fromY)};
+      }
+    } else {
+      // запасной вариант: подсветить ближайший блокер справа и направление его смещения
+      const red = blocks.find(b=>b.red);
+      const y1 = red.y, y2 = red.y + red.h;
+      let blocker=null, minDx=Infinity;
+      for (const o of blocks){ if (o===red) continue; const oy1=o.y,oy2=o.y+o.h; if (!overlaps1D_local(y1,y2,oy1,oy2)) continue; if (o.x >= red.x+red.w && o.x-(red.x+red.w) < minDx){ minDx=o.x-(red.x+red.w); blocker=o; } }
+      if (!blocker){ rect = {x:red.x+red.w, y:red.y, w:(SIZE - (red.x+red.w)), h:red.h}; }
+      else {
+        const range = allowedRange(blocker); // используем текущую функцию для живого состояния
+        const upSpace = blocker.y - range.min; const downSpace = range.max - blocker.y;
+        const targetY = downSpace>upSpace ? range.max : range.min;
+        rect = {x:blocker.x, y:Math.min(blocker.y,targetY), w:blocker.w, h:blocker.h + Math.abs(targetY-blocker.y)};
+      }
+    }
+
     const el = document.createElement('div'); el.className='hintPulse';
     el.style.left = px(8 + rect.x*CELL); el.style.top = px(8 + rect.y*CELL);
-    el.style.width = px(rect.w*CELL - 4 + (rect.w?0:0)); el.style.height = px(rect.h*CELL - 4 + (rect.h?0:0));
+    el.style.width = px(rect.w*CELL - 4); el.style.height = px(rect.h*CELL - 4);
     board.appendChild(el); hintArtifact = el;
 
     hintsLeft--; hintLeftEl.textContent = hintsLeft;
   }
 
+  
   // ======= ВЫБОР УРОВНЯ =======
   function buildLevelGrid(){
     levelGrid.innerHTML = '';
