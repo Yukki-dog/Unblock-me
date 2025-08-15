@@ -596,56 +596,8 @@
     });
   }
 
-// ======= ПОДСКАЗКА (шаг за шагом, пошаговое решение уровня) =======
-let hintSteps = [];
-let currentHintStep = 0;
-
-function startHint(){
-    if(hintsLeft <= 0){ showToast('Подсказки закончились'); return; }
-    usedHintThisLevel = true;
-    hintSteps = computeLevelSolution(blocks); // массив шагов до выхода
-    currentHintStep = 0;
-    showHintStep();
-}
-
-function showHintStep(){
-    clearHint();
-    if(currentHintStep >= hintSteps.length){ showToast('Подсказка закончена'); return; }
-
-    const step = hintSteps[currentHintStep];
-    const b = blocks[step.blockIdx];
-
-    // подсветка блока
-    const el = document.createElement('div');
-    el.className = 'hintPulse';
-    el.style.left = px(8 + b.x*CELL);
-    el.style.top = px(8 + b.y*CELL);
-    el.style.width = px(b.w*CELL - 4);
-    el.style.height = px(b.h*CELL - 4);
-    board.appendChild(el);
-    hintArtifact = el;
-
-    // всплывающее окно с инструкцией
-    const info = document.createElement('div');
-    info.className = 'hintPopup';
-    info.innerHTML = `Шаг ${currentHintStep+1}: переместите блок ${step.blockIdx+1} ${step.axis==='x'?'по горизонтали':'по вертикали'} к ${step.to}<br>`;
-    board.appendChild(info);
-
-    // стрелка на блок (с помощью CSS, можно доработать)
-    const arrow = document.createElement('div');
-    arrow.className = 'hintArrow';
-    arrow.style.left = px(8 + b.x*CELL + b.w*CELL/2 - 5);
-    arrow.style.top = px(8 + b.y*CELL + b.h*CELL/2 - 10);
-    info.appendChild(arrow);
-
-    // кнопка "Дальше"
-    const btn = document.createElement('button');
-    btn.textContent = 'Дальше';
-    btn.onclick = ()=>{ info.remove(); arrow.remove(); currentHintStep++; showHintStep(); };
-    info.appendChild(btn);
-
-    hintsLeft--; hintLeftEl.textContent = hintsLeft;
-}
+// ======= ПОДСКАЗКА =======
+-
 
 function computeLevelSolution(blocks){
     // BFS для всех шагов до выхода красного блока
